@@ -1,0 +1,61 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build APK
+      run: ./gradlew assembleDebug
+
+    - name: Rename APK
+      run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/dailymotion-downloader.apk
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: dailymotion-downloader
+        path: app/build/outputs/apk/debug/dailymotion-downloader.apk
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: app/build/outputs/apk/debug/dailymotion-downloader.apk
+        name: Release ${{ github.ref_name }}
+        body: |
+          ## Dailymotion Downloader ${{ github.ref_name }}
+
+          ### Téléchargement
+          Cliquez sur **dailymotion-downloader.apk** ci-dessous pour télécharger.
+
+          ### Installation
+          1. Téléchargez le fichier APK
+          2. Ouvrez-le sur votre téléphone Android
+          3. Autorisez l'installation depuis des sources inconnues
+          4. Installez l'application
+
+          ### Utilisation
+          - Collez un lien Dailymotion et appuyez sur Télécharger
+          - Ou partagez une vidéo depuis Dailymotion vers cette app

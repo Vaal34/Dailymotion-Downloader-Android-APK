@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.DailymotionDownloader" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.DailymotionDownloader" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/win95_blue</item>
+        <item name="colorPrimaryVariant">@color/win95_blue</item>
+        <item name="colorOnPrimary">@color/win95_white</item>
+        <item name="android:windowBackground">@color/win95_gray</item>
+    </style>
 </resources>

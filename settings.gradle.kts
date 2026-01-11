@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Dailymotion Downloader"
+rootProject.name = "DailymotionDownloader"
 include(":app")
