@@ -29,16 +29,19 @@ jobs:
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
+    - name: Rename APK
+      run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/dailymotion-downloader.apk
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        files: app/build/outputs/apk/debug/app-debug.apk
+        files: app/build/outputs/apk/debug/dailymotion-downloader.apk
         name: Release ${{ github.ref_name }}
         body: |
           ## Dailymotion Downloader ${{ github.ref_name }}
 
           ### Installation
-          1. Téléchargez le fichier `app-debug.apk`
+          1. Téléchargez le fichier `dailymotion-downloader.apk`
           2. Installez-le sur votre téléphone Android
           3. Autorisez l'installation depuis des sources inconnues si demandé
 
