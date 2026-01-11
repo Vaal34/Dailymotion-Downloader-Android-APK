@@ -9,8 +9,7 @@ import androidx.work.workDataOf
 import com.dailymotion.downloader.data.local.AppDatabase
 import com.dailymotion.downloader.data.model.Download
 import com.dailymotion.downloader.data.model.DownloadStatus
-import com.dailymotion.downloader.data.repository.DownloadRepository
-import com.dailymotion.downloader.di.RetrofitInstance
+import com.dailymotion.downloader.data.remote.DailymotionExtractor
 import com.dailymotion.downloader.worker.DownloadWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +18,8 @@ import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository: DownloadRepository
+    private val downloadDao = AppDatabase.getDatabase(application).downloadDao()
+    private val extractor = DailymotionExtractor()
 
     private val _downloads = MutableStateFlow<List<Download>>(emptyList())
     val downloads: StateFlow<List<Download>> = _downloads.asStateFlow()
@@ -28,11 +28,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
-        val downloadDao = AppDatabase.getDatabase(application).downloadDao()
-        repository = DownloadRepository(downloadDao, RetrofitInstance.dailymotionApi)
-
         viewModelScope.launch {
-            repository.getAllDownloads().collect { downloadList ->
+            downloadDao.getAllDownloads().collect { downloadList ->
                 _downloads.value = downloadList
             }
         }
@@ -43,18 +40,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 _uiState.value = UiState.Loading
 
-                val videoId = repository.extractVideoId(url)
+                val videoId = extractor.extractVideoId(url)
                 if (videoId == null) {
                     _uiState.value = UiState.Error("URL invalide. Veuillez entrer une URL Dailymotion valide.")
                     return@launch
                 }
 
-                val videoInfo = repository.getVideoInfo(videoId)
-
-                // Récupérer la meilleure qualité disponible
-                val downloadUrl = getBestQualityUrl(videoInfo.qualities)
-                if (downloadUrl == null) {
-                    _uiState.value = UiState.Error("Aucun lien de téléchargement trouvé")
+                val videoInfo = try {
+                    extractor.extractVideoInfo(videoId)
+                } catch (e: Exception) {
+                    _uiState.value = UiState.Error("Impossible de récupérer les infos de la vidéo: ${e.message}")
                     return@launch
                 }
 
@@ -62,12 +57,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     videoId = videoId,
                     title = videoInfo.title,
                     thumbnailUrl = videoInfo.thumbnailUrl,
-                    url = downloadUrl,
+                    url = videoInfo.downloadUrl,
                     filePath = null,
                     status = DownloadStatus.PENDING
                 )
 
-                val downloadId = repository.insertDownload(download)
+                val downloadId = downloadDao.insertDownload(download)
 
                 // Lancer le téléchargement avec WorkManager
                 val workRequest = OneTimeWorkRequestBuilder<DownloadWorker>()
@@ -86,29 +81,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun getBestQualityUrl(qualities: Map<String, List<com.dailymotion.downloader.data.remote.QualityInfo>>?): String? {
-        if (qualities == null) return null
-
-        // Ordre de préférence des qualités
-        val preferredQualities = listOf("1080", "720", "480", "380", "240")
-
-        for (quality in preferredQualities) {
-            val qualityList = qualities[quality]
-            if (!qualityList.isNullOrEmpty()) {
-                val mp4Quality = qualityList.find { it.type == "video/mp4" || it.type == "application/x-mpegURL" }
-                if (mp4Quality != null) {
-                    return mp4Quality.url
-                }
-            }
-        }
-
-        // Si aucune qualité préférée n'est trouvée, prendre la première disponible
-        return qualities.values.firstOrNull()?.firstOrNull()?.url
-    }
-
     fun deleteDownload(download: Download) {
         viewModelScope.launch {
-            repository.deleteDownload(download)
+            downloadDao.deleteDownload(download)
         }
     }
 
