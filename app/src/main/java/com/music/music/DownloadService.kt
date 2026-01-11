@@ -30,6 +30,7 @@ class DownloadService : Service() {
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
+        .followRedirects(true)
         .build()
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -55,58 +56,87 @@ class DownloadService : Service() {
 
     private suspend fun downloadVideo(videoId: String, title: String, url: String) {
         try {
+            // Vérifier si c'est un fichier HLS (m3u8)
+            if (url.contains(".m3u8")) {
+                downloadHlsVideo(videoId, title, url)
+            } else {
+                downloadDirectVideo(videoId, title, url)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            withContext(Dispatchers.Main) {
+                showNotification("Erreur: ${e.message}", -1)
+            }
+            stopSelf()
+        }
+    }
+
+    private suspend fun downloadHlsVideo(videoId: String, title: String, m3u8Url: String) {
+        try {
+            withContext(Dispatchers.Main) {
+                showNotification("Récupération des segments...", 0)
+            }
+
+            // Récupérer le manifest m3u8
             val request = Request.Builder()
-                .url(url)
+                .url(m3u8Url)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
                 .build()
 
             val response = client.newCall(request).execute()
+            val content = response.body?.string() ?: throw Exception("Manifest vide")
 
-            if (!response.isSuccessful) {
-                showNotification("Échec du téléchargement", -1)
-                stopSelf()
-                return
+            // Parser les segments
+            val segments = mutableListOf<String>()
+            val baseUrl = m3u8Url.substringBeforeLast("/")
+
+            content.lines().forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.isNotEmpty() && !trimmed.startsWith("#")) {
+                    val segmentUrl = if (trimmed.startsWith("http")) {
+                        trimmed
+                    } else {
+                        "$baseUrl/$trimmed"
+                    }
+                    segments.add(segmentUrl)
+                }
             }
 
-            val body = response.body ?: run {
-                showNotification("Fichier vide", -1)
-                stopSelf()
-                return
+            if (segments.isEmpty()) {
+                throw Exception("Aucun segment trouvé")
             }
 
-            // Créer le dossier de téléchargement
+            // Créer le fichier de sortie
             val downloadsDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                 ?: File(filesDir, "downloads")
             if (!downloadsDir.exists()) {
                 downloadsDir.mkdirs()
             }
 
-            // Nettoyer le titre pour le nom de fichier
             val safeTitle = title.replace(Regex("[^a-zA-Z0-9\\s]"), "").take(50).trim()
-            val fileName = "${safeTitle}_$videoId.mp4"
+            val fileName = "${safeTitle}_$videoId.ts"
             val file = File(downloadsDir, fileName)
 
-            val totalBytes = body.contentLength()
-            var downloadedBytes = 0L
+            // Télécharger tous les segments
+            FileOutputStream(file).use { output ->
+                segments.forEachIndexed { index, segmentUrl ->
+                    val progress = ((index + 1) * 100) / segments.size
 
-            body.byteStream().use { input ->
-                FileOutputStream(file).use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var lastProgress = 0
+                    withContext(Dispatchers.Main) {
+                        showNotification("$title - $progress%", progress)
+                    }
 
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        downloadedBytes += bytesRead
+                    val segmentRequest = Request.Builder()
+                        .url(segmentUrl)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
+                        .build()
 
-                        if (totalBytes > 0) {
-                            val progress = ((downloadedBytes * 100) / totalBytes).toInt()
-                            if (progress != lastProgress && progress % 5 == 0) {
-                                lastProgress = progress
-                                withContext(Dispatchers.Main) {
-                                    showNotification("$title - $progress%", progress)
-                                }
-                            }
+                    val segmentResponse = client.newCall(segmentRequest).execute()
+                    segmentResponse.body?.byteStream()?.use { input ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
                         }
                     }
                 }
@@ -117,13 +147,67 @@ class DownloadService : Service() {
             }
 
         } catch (e: Exception) {
-            e.printStackTrace()
-            withContext(Dispatchers.Main) {
-                showNotification("Erreur: ${e.message}", -1)
-            }
+            throw e
         } finally {
             stopSelf()
         }
+    }
+
+    private suspend fun downloadDirectVideo(videoId: String, title: String, url: String) {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
+            .build()
+
+        val response = client.newCall(request).execute()
+
+        if (!response.isSuccessful) {
+            throw Exception("Erreur HTTP ${response.code}")
+        }
+
+        val body = response.body ?: throw Exception("Fichier vide")
+
+        val downloadsDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: File(filesDir, "downloads")
+        if (!downloadsDir.exists()) {
+            downloadsDir.mkdirs()
+        }
+
+        val safeTitle = title.replace(Regex("[^a-zA-Z0-9\\s]"), "").take(50).trim()
+        val fileName = "${safeTitle}_$videoId.mp4"
+        val file = File(downloadsDir, fileName)
+
+        val totalBytes = body.contentLength()
+        var downloadedBytes = 0L
+
+        body.byteStream().use { input ->
+            FileOutputStream(file).use { output ->
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                var lastProgress = 0
+
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    output.write(buffer, 0, bytesRead)
+                    downloadedBytes += bytesRead
+
+                    if (totalBytes > 0) {
+                        val progress = ((downloadedBytes * 100) / totalBytes).toInt()
+                        if (progress != lastProgress && progress % 5 == 0) {
+                            lastProgress = progress
+                            withContext(Dispatchers.Main) {
+                                showNotification("$title - $progress%", progress)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        withContext(Dispatchers.Main) {
+            showNotification("Téléchargement terminé: $title", 100)
+        }
+
+        stopSelf()
     }
 
     private fun createNotificationChannel() {

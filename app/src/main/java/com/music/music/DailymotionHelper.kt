@@ -21,73 +21,95 @@ object DailymotionHelper {
 
     fun getVideoInfo(videoId: String): VideoInfo? {
         return try {
-            // Étape 1: Récupérer le titre depuis l'API publique
-            val title = getTitleFromApi(videoId) ?: "Video_$videoId"
+            // Étape 1: Récupérer les métadonnées depuis l'API player
+            val playerUrl = "https://www.dailymotion.com/player/metadata/video/$videoId"
+            val request = Request.Builder()
+                .url(playerUrl)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                .build()
 
-            // Étape 2: Récupérer l'URL de téléchargement depuis la page player
-            val downloadUrl = getDownloadUrl(videoId)
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return null
 
-            if (downloadUrl != null) {
-                VideoInfo(videoId, title, downloadUrl)
-            } else {
-                null
+            val json = JSONObject(body)
+
+            // Vérifier s'il y a une erreur
+            if (json.has("error")) {
+                return null
             }
+
+            // Récupérer le titre
+            val title = json.optString("title", "Video_$videoId")
+
+            // Récupérer l'URL du manifest HLS
+            val qualities = json.optJSONObject("qualities") ?: return null
+            val autoArray = qualities.optJSONArray("auto") ?: return null
+
+            var m3u8Url: String? = null
+            for (i in 0 until autoArray.length()) {
+                val item = autoArray.getJSONObject(i)
+                val type = item.optString("type", "")
+                if (type.contains("mpegURL") || type.contains("m3u8")) {
+                    m3u8Url = item.optString("url", null)
+                    break
+                }
+            }
+
+            if (m3u8Url == null) return null
+
+            // Étape 2: Parser le manifest HLS pour obtenir la meilleure qualité
+            val downloadUrl = getBestQualityFromM3u8(m3u8Url) ?: m3u8Url
+
+            VideoInfo(videoId, title, downloadUrl)
+
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
     }
 
-    private fun getTitleFromApi(videoId: String): String? {
+    private fun getBestQualityFromM3u8(m3u8Url: String): String? {
         return try {
             val request = Request.Builder()
-                .url("https://api.dailymotion.com/video/$videoId?fields=title")
-                .build()
-
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return null
-
-            val json = JSONObject(body)
-            json.optString("title", null)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun getDownloadUrl(videoId: String): String? {
-        return try {
-            // Essayer l'API player metadata
-            val playerUrl = "https://www.dailymotion.com/player/metadata/video/$videoId"
-            val request = Request.Builder()
-                .url(playerUrl)
+                .url(m3u8Url)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
                 .build()
 
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return null
+            val content = response.body?.string() ?: return null
 
-            val json = JSONObject(body)
+            // Parser le manifest HLS pour trouver les différentes qualités
+            val lines = content.lines()
+            var bestUrl: String? = null
+            var bestBandwidth = 0L
 
-            // Chercher dans les qualités
-            val qualities = json.optJSONObject("qualities")
-            if (qualities != null) {
-                val preferredQualities = listOf("720", "480", "380", "240", "auto")
-                for (q in preferredQualities) {
-                    val qualityArray = qualities.optJSONArray(q)
-                    if (qualityArray != null && qualityArray.length() > 0) {
-                        for (i in 0 until qualityArray.length()) {
-                            val item = qualityArray.getJSONObject(i)
-                            val type = item.optString("type", "")
-                            val url = item.optString("url", "")
-                            if (url.isNotEmpty() && (type.contains("video") || type.contains("mp4"))) {
-                                return url
+            for (i in lines.indices) {
+                val line = lines[i]
+                if (line.startsWith("#EXT-X-STREAM-INF")) {
+                    // Extraire la bande passante
+                    val bandwidthMatch = Regex("BANDWIDTH=(\\d+)").find(line)
+                    val bandwidth = bandwidthMatch?.groupValues?.get(1)?.toLongOrNull() ?: 0
+
+                    // La ligne suivante contient l'URL
+                    if (i + 1 < lines.size) {
+                        val urlLine = lines[i + 1].trim()
+                        if (urlLine.isNotEmpty() && !urlLine.startsWith("#")) {
+                            if (bandwidth > bestBandwidth) {
+                                bestBandwidth = bandwidth
+                                bestUrl = if (urlLine.startsWith("http")) {
+                                    urlLine
+                                } else {
+                                    // URL relative - construire l'URL complète
+                                    val baseUrl = m3u8Url.substringBeforeLast("/")
+                                    "$baseUrl/$urlLine"
+                                }
                             }
                         }
                     }
                 }
             }
 
-            null
+            bestUrl
         } catch (e: Exception) {
             e.printStackTrace()
             null
