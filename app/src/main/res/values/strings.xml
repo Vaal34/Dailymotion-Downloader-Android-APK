@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dailymotion Downloader</string>
+    <string name="download_notification_title">Téléchargement en cours</string>
+    <string name="download_complete_title">Téléchargement terminé</string>
+    <string name="download_failed_title">Échec du téléchargement</string>
+</resources>
