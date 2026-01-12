@@ -184,14 +184,26 @@ class DownloadService : Service() {
 
             withContext(Dispatchers.Main) {
                 showNotification("Terminé: $title (dans Téléchargements/Dailymotion)", 100)
+                sendDownloadCompleteBroadcast(title, true, null)
             }
 
         } catch (e: Exception) {
             outputStream?.close()
+            sendDownloadCompleteBroadcast(title, false, e.message)
             throw e
         } finally {
             stopSelf()
         }
+    }
+
+    private fun sendDownloadCompleteBroadcast(title: String, success: Boolean, error: String?) {
+        val intent = Intent("com.music.music.DOWNLOAD_COMPLETE").apply {
+            putExtra("title", title)
+            putExtra("success", success)
+            putExtra("error", error ?: "")
+            setPackage(packageName)
+        }
+        sendBroadcast(intent)
     }
 
     private suspend fun downloadDirectVideo(videoId: String, title: String, url: String) {
@@ -248,10 +260,12 @@ class DownloadService : Service() {
 
             withContext(Dispatchers.Main) {
                 showNotification("Terminé: $title (dans Téléchargements/Dailymotion)", 100)
+                sendDownloadCompleteBroadcast(title, true, null)
             }
 
         } catch (e: Exception) {
             outputStream?.close()
+            sendDownloadCompleteBroadcast(title, false, e.message)
             throw e
         } finally {
             stopSelf()

@@ -10,91 +10,95 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/win95_blue"
-        android:padding="8dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
         android:text="Dailymotion Downloader"
         android:textColor="@color/win95_white"
-        android:textSize="16sp"
-        android:textStyle="bold" />
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif" />
 
+    <!-- Contenu principal -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Panneau URL -->
-        <LinearLayout
+        <!-- Section URL -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Lien de la vidéo"
+            android:textColor="@color/win95_black"
+            android:textSize="14sp"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/urlInput"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:background="@drawable/win95_inset_border"
+            android:hint="Collez le lien Dailymotion ici"
+            android:textColorHint="@color/win95_dark_gray"
+            android:inputType="textUri"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:textColor="@color/win95_black"
+            android:textSize="14sp"
+            android:singleLine="true" />
+
+        <!-- Bouton Télécharger -->
+        <Button
+            android:id="@+id/downloadButton"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/win95_button_selector"
+            android:text="Télécharger"
+            android:textColor="@color/win95_black"
+            android:textSize="14sp"
+            android:textAllCaps="false" />
+
+        <!-- Message de statut -->
+        <TextView
+            android:id="@+id/statusText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@color/win95_gray"
-            android:padding="12dp">
+            android:layout_marginTop="12dp"
+            android:textColor="@color/win95_black"
+            android:textSize="12sp"
+            android:visibility="gone" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Lien de la vidéo"
-                android:textColor="@color/win95_black"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:layout_marginBottom="8dp" />
+        <!-- Séparateur -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="12dp"
+            android:background="@color/win95_dark_gray" />
 
-            <EditText
-                android:id="@+id/urlInput"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:background="@color/win95_white"
-                android:hint="Collez le lien Dailymotion ici"
-                android:inputType="textUri"
-                android:padding="8dp"
-                android:textColor="@color/win95_black"
-                android:textSize="14sp" />
+        <!-- Section Historique -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Historique des téléchargements"
+            android:textColor="@color/win95_black"
+            android:textSize="14sp"
+            android:layout_marginBottom="8dp" />
 
-            <Button
-                android:id="@+id/downloadButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="12dp"
-                android:background="@color/win95_light_gray"
-                android:text="Télécharger"
-                android:textColor="@color/win95_black"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/statusText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:textColor="@color/win95_black"
-                android:textSize="12sp"
-                android:visibility="gone" />
-
-        </LinearLayout>
-
-        <!-- Panneau Historique -->
-        <LinearLayout
+        <!-- Liste historique avec bordure enfoncée -->
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:orientation="vertical"
-            android:background="@color/win95_gray"
-            android:padding="12dp"
-            android:layout_marginTop="16dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Historique des téléchargements"
-                android:textColor="@color/win95_black"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:layout_marginBottom="8dp" />
+            android:background="@drawable/win95_inset_border">
 
             <ScrollView
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@color/win95_white">
+                android:layout_height="match_parent">
 
                 <LinearLayout
                     android:id="@+id/historyContainer"
@@ -108,16 +112,16 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:gravity="center"
-                        android:padding="32dp"
+                        android:padding="24dp"
                         android:text="Aucun téléchargement"
                         android:textColor="@color/win95_dark_gray"
-                        android:textSize="14sp" />
+                        android:textSize="12sp" />
 
                 </LinearLayout>
 
             </ScrollView>
 
-        </LinearLayout>
+        </FrameLayout>
 
     </LinearLayout>
 

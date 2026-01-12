@@ -1,13 +1,19 @@
 package com.music.music
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -26,6 +32,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var historyContainer: LinearLayout
     private lateinit var emptyText: TextView
+
+    private val downloadCompleteReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val title = intent?.getStringExtra("title") ?: "Vidéo"
+            val success = intent?.getBooleanExtra("success", false) ?: false
+
+            if (success) {
+                showWin95Toast("Téléchargement terminé: $title", true)
+            } else {
+                val error = intent?.getStringExtra("error") ?: "Erreur inconnue"
+                showWin95Toast("Échec: $error", false)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,11 +68,34 @@ class MainActivity : AppCompatActivity() {
             if (url.isNotEmpty()) {
                 startDownload(url)
             } else {
-                showStatus("Veuillez entrer un lien Dailymotion", isError = true)
+                showWin95Toast("Veuillez entrer un lien Dailymotion", false)
             }
         }
 
         loadHistory()
+
+        // Enregistrer le receiver pour les notifications de fin de téléchargement
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(
+                downloadCompleteReceiver,
+                IntentFilter("com.music.music.DOWNLOAD_COMPLETE"),
+                RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            registerReceiver(
+                downloadCompleteReceiver,
+                IntentFilter("com.music.music.DOWNLOAD_COMPLETE")
+            )
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(downloadCompleteReceiver)
+        } catch (e: Exception) {
+            // Ignorer si déjà unregister
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -65,6 +108,7 @@ class MainActivity : AppCompatActivity() {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
             if (!sharedText.isNullOrEmpty()) {
                 urlInput.setText(sharedText)
+                showWin95Toast("Lien collé depuis le partage", true)
             }
         }
     }
@@ -85,7 +129,8 @@ class MainActivity : AppCompatActivity() {
     private fun startDownload(url: String) {
         val videoId = extractVideoId(url)
         if (videoId == null) {
-            showStatus("URL invalide. Utilisez un lien dailymotion.com/video/xxx", isError = true)
+            showWin95Toast("URL invalide!", false)
+            showStatus("Utilisez un lien dailymotion.com/video/xxx", isError = true)
             return
         }
 
@@ -100,11 +145,13 @@ class MainActivity : AppCompatActivity() {
 
                 if (videoInfo == null) {
                     showStatus("Impossible de récupérer la vidéo", isError = true)
+                    showWin95Toast("Vidéo non trouvée", false)
                     downloadButton.isEnabled = true
                     return@launch
                 }
 
-                showStatus("Téléchargement: ${videoInfo.title}")
+                showStatus("Téléchargement en cours...")
+                showWin95Toast("Démarrage: ${videoInfo.title}", true)
 
                 // Lancer le service de téléchargement
                 val serviceIntent = Intent(this@MainActivity, DownloadService::class.java).apply {
@@ -120,13 +167,13 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 urlInput.setText("")
-                showStatus("Téléchargement démarré: ${videoInfo.title}", isError = false)
 
                 // Ajouter à l'historique
                 addToHistory(videoInfo.title)
 
             } catch (e: Exception) {
                 showStatus("Erreur: ${e.message}", isError = true)
+                showWin95Toast("Erreur!", false)
             } finally {
                 downloadButton.isEnabled = true
             }
@@ -155,9 +202,29 @@ class MainActivity : AppCompatActivity() {
         statusText.setTextColor(
             ContextCompat.getColor(
                 this,
-                if (isError) android.R.color.holo_red_dark else android.R.color.holo_green_dark
+                if (isError) android.R.color.holo_red_dark else R.color.win95_black
             )
         )
+    }
+
+    private fun showWin95Toast(message: String, isSuccess: Boolean) {
+        val inflater = LayoutInflater.from(this)
+        val layout = inflater.inflate(R.layout.win95_toast, null)
+
+        val textView = layout.findViewById<TextView>(R.id.toastText)
+        val iconView = layout.findViewById<ImageView>(R.id.toastIcon)
+
+        textView.text = message
+        iconView.setImageResource(
+            if (isSuccess) android.R.drawable.ic_dialog_info
+            else android.R.drawable.ic_dialog_alert
+        )
+
+        val toast = Toast(applicationContext)
+        toast.duration = Toast.LENGTH_LONG
+        toast.view = layout
+        toast.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, 100)
+        toast.show()
     }
 
     private fun addToHistory(title: String) {
@@ -167,7 +234,7 @@ class MainActivity : AppCompatActivity() {
             text = "• $title"
             textSize = 12f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.win95_black))
-            setPadding(0, 4, 0, 4)
+            setPadding(0, 8, 0, 8)
         }
 
         historyContainer.addView(itemView, 0)
@@ -190,7 +257,7 @@ class MainActivity : AppCompatActivity() {
                     text = "• $title"
                     textSize = 12f
                     setTextColor(ContextCompat.getColor(this@MainActivity, R.color.win95_black))
-                    setPadding(0, 4, 0, 4)
+                    setPadding(0, 8, 0, 8)
                 }
                 historyContainer.addView(itemView)
             }
