@@ -18,7 +18,7 @@
         android:textColor="@color/win95_white"
         android:textSize="14sp"
         android:textStyle="bold"
-        android:fontFamily="@font/w95fa" />
+        android:fontFamily="@font/w95fa_font" />
 
     <!-- Contenu principal -->
     <LinearLayout
@@ -34,7 +34,7 @@
             android:text="Lien de la vidéo"
             android:textColor="@color/win95_black"
             android:textSize="14sp"
-            android:fontFamily="@font/w95fa"
+            android:fontFamily="@font/w95fa_font"
             android:layout_marginBottom="8dp" />
 
         <EditText
@@ -49,7 +49,7 @@
             android:paddingEnd="8dp"
             android:textColor="@color/win95_black"
             android:textSize="14sp"
-            android:fontFamily="@font/w95fa"
+            android:fontFamily="@font/w95fa_font"
             android:singleLine="true" />
 
         <!-- Section Progress -->
@@ -60,7 +60,7 @@
             android:text="Progress"
             android:textColor="@color/win95_black"
             android:textSize="12sp"
-            android:fontFamily="@font/w95fa"
+            android:fontFamily="@font/w95fa_font"
             android:layout_marginTop="16dp"
             android:visibility="gone" />
 
@@ -92,7 +92,7 @@
                 android:text="0%"
                 android:textColor="@color/win95_white"
                 android:textSize="12sp"
-                android:fontFamily="@font/w95fa"
+                android:fontFamily="@font/w95fa_font"
                 android:textStyle="bold" />
 
         </FrameLayout>
@@ -106,9 +106,9 @@
             android:layout_gravity="center_horizontal"
             android:background="@drawable/win95_button_selector"
             android:text="Download"
-            android:textColor="@color/win95_black"
+            android:textColor="@color/win95_white"
             android:textSize="12sp"
-            android:fontFamily="@font/w95fa"
+            android:fontFamily="@font/w95fa_font"
             android:textAllCaps="false" />
 
         <!-- Message de statut -->
@@ -119,7 +119,7 @@
             android:layout_marginTop="12dp"
             android:textColor="@color/win95_black"
             android:textSize="12sp"
-            android:fontFamily="@font/w95fa"
+            android:fontFamily="@font/w95fa_font"
             android:visibility="gone" />
 
         <!-- Séparateur -->
@@ -137,7 +137,7 @@
             android:text="Historique des téléchargements"
             android:textColor="@color/win95_black"
             android:textSize="14sp"
-            android:fontFamily="@font/w95fa"
+            android:fontFamily="@font/w95fa_font"
             android:layout_marginBottom="8dp" />
 
         <!-- Liste historique avec bordure enfoncée -->
@@ -167,7 +167,7 @@
                         android:text="Aucun téléchargement"
                         android:textColor="@color/win95_dark_gray"
                         android:textSize="12sp"
-                        android:fontFamily="@font/w95fa" />
+                        android:fontFamily="@font/w95fa_font" />
 
                 </LinearLayout>
 

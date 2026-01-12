@@ -82,6 +82,11 @@ class MainActivity : AppCompatActivity() {
         handleSharedIntent(intent)
 
         downloadButton.setOnClickListener {
+            // Cacher le clavier
+            val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            inputMethodManager.hideSoftInputFromWindow(urlInput.windowToken, 0)
+            urlInput.clearFocus()
+
             val url = urlInput.text.toString().trim()
             if (url.isNotEmpty()) {
                 startDownload(url)
@@ -279,6 +284,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 12f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.win95_black))
             setPadding(0, 8, 0, 8)
+            typeface = resources.getFont(R.font.w95fa_font)
         }
 
         historyContainer.addView(itemView, 0)
@@ -301,6 +307,7 @@ class MainActivity : AppCompatActivity() {
                     textSize = 12f
                     setTextColor(ContextCompat.getColor(this@MainActivity, R.color.win95_black))
                     setPadding(0, 8, 0, 8)
+                    typeface = resources.getFont(R.font.w95fa_font)
                 }
                 historyContainer.addView(itemView)
             }
