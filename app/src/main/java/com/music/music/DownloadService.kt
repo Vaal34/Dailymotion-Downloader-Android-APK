@@ -3,10 +3,13 @@ package com.music.music
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ContentValues
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
+import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +20,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.io.OutputStream
 import java.util.concurrent.TimeUnit
 
 class DownloadService : Service() {
@@ -56,7 +60,6 @@ class DownloadService : Service() {
 
     private suspend fun downloadVideo(videoId: String, title: String, url: String) {
         try {
-            // Vérifier si c'est un fichier HLS (m3u8)
             if (url.contains(".m3u8")) {
                 downloadHlsVideo(videoId, title, url)
             } else {
@@ -71,13 +74,55 @@ class DownloadService : Service() {
         }
     }
 
+    private fun getOutputStream(fileName: String, mimeType: String): Pair<OutputStream, Uri?> {
+        val safeFileName = fileName.replace(Regex("[^a-zA-Z0-9._\\s-]"), "").take(100)
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+ : utiliser MediaStore
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, safeFileName)
+                put(MediaStore.Video.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Dailymotion")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                ?: throw Exception("Impossible de créer le fichier")
+
+            val outputStream = contentResolver.openOutputStream(uri)
+                ?: throw Exception("Impossible d'ouvrir le fichier")
+
+            Pair(outputStream, uri)
+        } else {
+            // Android 9 et moins : dossier Téléchargements classique
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dailymotionDir = File(downloadsDir, "Dailymotion")
+            if (!dailymotionDir.exists()) {
+                dailymotionDir.mkdirs()
+            }
+            val file = File(dailymotionDir, safeFileName)
+            Pair(FileOutputStream(file), null)
+        }
+    }
+
+    private fun finalizeDownload(uri: Uri?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Video.Media.IS_PENDING, 0)
+            }
+            contentResolver.update(uri, contentValues, null, null)
+        }
+    }
+
     private suspend fun downloadHlsVideo(videoId: String, title: String, m3u8Url: String) {
+        var outputStream: OutputStream? = null
+        var uri: Uri? = null
+
         try {
             withContext(Dispatchers.Main) {
                 showNotification("Récupération des segments...", 0)
             }
 
-            // Récupérer le manifest m3u8
             val request = Request.Builder()
                 .url(m3u8Url)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
@@ -86,7 +131,6 @@ class DownloadService : Service() {
             val response = client.newCall(request).execute()
             val content = response.body?.string() ?: throw Exception("Manifest vide")
 
-            // Parser les segments
             val segments = mutableListOf<String>()
             val baseUrl = m3u8Url.substringBeforeLast("/")
 
@@ -106,47 +150,44 @@ class DownloadService : Service() {
                 throw Exception("Aucun segment trouvé")
             }
 
-            // Créer le fichier de sortie
-            val downloadsDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-                ?: File(filesDir, "downloads")
-            if (!downloadsDir.exists()) {
-                downloadsDir.mkdirs()
-            }
-
             val safeTitle = title.replace(Regex("[^a-zA-Z0-9\\s]"), "").take(50).trim()
             val fileName = "${safeTitle}_$videoId.ts"
-            val file = File(downloadsDir, fileName)
 
-            // Télécharger tous les segments
-            FileOutputStream(file).use { output ->
-                segments.forEachIndexed { index, segmentUrl ->
-                    val progress = ((index + 1) * 100) / segments.size
+            val (stream, fileUri) = getOutputStream(fileName, "video/mp2t")
+            outputStream = stream
+            uri = fileUri
 
-                    withContext(Dispatchers.Main) {
-                        showNotification("$title - $progress%", progress)
-                    }
+            segments.forEachIndexed { index, segmentUrl ->
+                val progress = ((index + 1) * 100) / segments.size
 
-                    val segmentRequest = Request.Builder()
-                        .url(segmentUrl)
-                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
-                        .build()
+                withContext(Dispatchers.Main) {
+                    showNotification("$title - $progress%", progress)
+                }
 
-                    val segmentResponse = client.newCall(segmentRequest).execute()
-                    segmentResponse.body?.byteStream()?.use { input ->
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Int
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                        }
+                val segmentRequest = Request.Builder()
+                    .url(segmentUrl)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
+                    .build()
+
+                val segmentResponse = client.newCall(segmentRequest).execute()
+                segmentResponse.body?.byteStream()?.use { input ->
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream?.write(buffer, 0, bytesRead)
                     }
                 }
             }
 
+            outputStream?.close()
+            finalizeDownload(uri)
+
             withContext(Dispatchers.Main) {
-                showNotification("Téléchargement terminé: $title", 100)
+                showNotification("Terminé: $title (dans Téléchargements/Dailymotion)", 100)
             }
 
         } catch (e: Exception) {
+            outputStream?.close()
             throw e
         } finally {
             stopSelf()
@@ -154,40 +195,40 @@ class DownloadService : Service() {
     }
 
     private suspend fun downloadDirectVideo(videoId: String, title: String, url: String) {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
-            .build()
+        var outputStream: OutputStream? = null
+        var uri: Uri? = null
 
-        val response = client.newCall(request).execute()
+        try {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
+                .build()
 
-        if (!response.isSuccessful) {
-            throw Exception("Erreur HTTP ${response.code}")
-        }
+            val response = client.newCall(request).execute()
 
-        val body = response.body ?: throw Exception("Fichier vide")
+            if (!response.isSuccessful) {
+                throw Exception("Erreur HTTP ${response.code}")
+            }
 
-        val downloadsDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            ?: File(filesDir, "downloads")
-        if (!downloadsDir.exists()) {
-            downloadsDir.mkdirs()
-        }
+            val body = response.body ?: throw Exception("Fichier vide")
 
-        val safeTitle = title.replace(Regex("[^a-zA-Z0-9\\s]"), "").take(50).trim()
-        val fileName = "${safeTitle}_$videoId.mp4"
-        val file = File(downloadsDir, fileName)
+            val safeTitle = title.replace(Regex("[^a-zA-Z0-9\\s]"), "").take(50).trim()
+            val fileName = "${safeTitle}_$videoId.mp4"
 
-        val totalBytes = body.contentLength()
-        var downloadedBytes = 0L
+            val (stream, fileUri) = getOutputStream(fileName, "video/mp4")
+            outputStream = stream
+            uri = fileUri
 
-        body.byteStream().use { input ->
-            FileOutputStream(file).use { output ->
+            val totalBytes = body.contentLength()
+            var downloadedBytes = 0L
+
+            body.byteStream().use { input ->
                 val buffer = ByteArray(8192)
                 var bytesRead: Int
                 var lastProgress = 0
 
                 while (input.read(buffer).also { bytesRead = it } != -1) {
-                    output.write(buffer, 0, bytesRead)
+                    outputStream?.write(buffer, 0, bytesRead)
                     downloadedBytes += bytesRead
 
                     if (totalBytes > 0) {
@@ -201,13 +242,20 @@ class DownloadService : Service() {
                     }
                 }
             }
-        }
 
-        withContext(Dispatchers.Main) {
-            showNotification("Téléchargement terminé: $title", 100)
-        }
+            outputStream?.close()
+            finalizeDownload(uri)
 
-        stopSelf()
+            withContext(Dispatchers.Main) {
+                showNotification("Terminé: $title (dans Téléchargements/Dailymotion)", 100)
+            }
+
+        } catch (e: Exception) {
+            outputStream?.close()
+            throw e
+        } finally {
+            stopSelf()
+        }
     }
 
     private fun createNotificationChannel() {
