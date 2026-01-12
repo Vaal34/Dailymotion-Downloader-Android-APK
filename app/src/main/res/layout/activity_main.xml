@@ -50,16 +50,60 @@
             android:textSize="14sp"
             android:singleLine="true" />
 
-        <!-- Bouton Télécharger -->
+        <!-- Section Progress -->
+        <TextView
+            android:id="@+id/progressLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Progress"
+            android:textColor="@color/win95_black"
+            android:textSize="12sp"
+            android:layout_marginTop="16dp"
+            android:visibility="gone" />
+
+        <!-- Barre de progression Windows 95 -->
+        <FrameLayout
+            android:id="@+id/progressContainer"
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/win95_progress_bg"
+            android:visibility="gone">
+
+            <!-- Fond de la progression (bleu) -->
+            <View
+                android:id="@+id/progressFill"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="2dp"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="2dp"
+                android:background="@drawable/win95_progress_fill" />
+
+            <!-- Texte du pourcentage -->
+            <TextView
+                android:id="@+id/progressText"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="0%"
+                android:textColor="@color/win95_white"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+        </FrameLayout>
+
+        <!-- Bouton Télécharger style Windows 95 -->
         <Button
             android:id="@+id/downloadButton"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
+            android:layout_width="200dp"
+            android:layout_height="32dp"
             android:layout_marginTop="16dp"
+            android:layout_gravity="center_horizontal"
             android:background="@drawable/win95_button_selector"
-            android:text="Télécharger"
+            android:text="Download"
             android:textColor="@color/win95_black"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:textAllCaps="false" />
 
         <!-- Message de statut -->

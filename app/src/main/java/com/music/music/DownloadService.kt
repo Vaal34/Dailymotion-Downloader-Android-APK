@@ -162,6 +162,7 @@ class DownloadService : Service() {
 
                 withContext(Dispatchers.Main) {
                     showNotification("$title - $progress%", progress)
+                    sendProgressBroadcast(progress)
                 }
 
                 val segmentRequest = Request.Builder()
@@ -201,6 +202,14 @@ class DownloadService : Service() {
             putExtra("title", title)
             putExtra("success", success)
             putExtra("error", error ?: "")
+            setPackage(packageName)
+        }
+        sendBroadcast(intent)
+    }
+
+    private fun sendProgressBroadcast(progress: Int) {
+        val intent = Intent("com.music.music.DOWNLOAD_PROGRESS").apply {
+            putExtra("progress", progress)
             setPackage(packageName)
         }
         sendBroadcast(intent)
@@ -249,6 +258,7 @@ class DownloadService : Service() {
                             lastProgress = progress
                             withContext(Dispatchers.Main) {
                                 showNotification("$title - $progress%", progress)
+                                sendProgressBroadcast(progress)
                             }
                         }
                     }

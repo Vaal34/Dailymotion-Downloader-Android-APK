@@ -6,13 +6,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -32,18 +35,32 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var historyContainer: LinearLayout
     private lateinit var emptyText: TextView
+    private lateinit var progressContainer: FrameLayout
+    private lateinit var progressFill: View
+    private lateinit var progressText: TextView
+    private lateinit var progressLabel: TextView
 
     private val downloadCompleteReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val title = intent?.getStringExtra("title") ?: "Vidéo"
             val success = intent?.getBooleanExtra("success", false) ?: false
 
+            hideProgress()
+
             if (success) {
-                showWin95Toast("Téléchargement terminé: $title", true)
+                showWin95Toast("Téléchargement terminé!\n$title", true)
+                showStatus("Sauvegardé dans Téléchargements/Dailymotion", isError = false)
             } else {
                 val error = intent?.getStringExtra("error") ?: "Erreur inconnue"
                 showWin95Toast("Échec: $error", false)
             }
+        }
+    }
+
+    private val progressReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val progress = intent?.getIntExtra("progress", 0) ?: 0
+            updateProgress(progress)
         }
     }
 
@@ -56,11 +73,12 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         historyContainer = findViewById(R.id.historyContainer)
         emptyText = findViewById(R.id.emptyText)
+        progressContainer = findViewById(R.id.progressContainer)
+        progressFill = findViewById(R.id.progressFill)
+        progressText = findViewById(R.id.progressText)
+        progressLabel = findViewById(R.id.progressLabel)
 
-        // Demander les permissions
         requestPermissions()
-
-        // Gérer le partage depuis d'autres apps
         handleSharedIntent(intent)
 
         downloadButton.setOnClickListener {
@@ -74,18 +92,16 @@ class MainActivity : AppCompatActivity() {
 
         loadHistory()
 
-        // Enregistrer le receiver pour les notifications de fin de téléchargement
+        // Enregistrer les receivers
+        val filter1 = IntentFilter("com.music.music.DOWNLOAD_COMPLETE")
+        val filter2 = IntentFilter("com.music.music.DOWNLOAD_PROGRESS")
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(
-                downloadCompleteReceiver,
-                IntentFilter("com.music.music.DOWNLOAD_COMPLETE"),
-                RECEIVER_NOT_EXPORTED
-            )
+            registerReceiver(downloadCompleteReceiver, filter1, RECEIVER_NOT_EXPORTED)
+            registerReceiver(progressReceiver, filter2, RECEIVER_NOT_EXPORTED)
         } else {
-            registerReceiver(
-                downloadCompleteReceiver,
-                IntentFilter("com.music.music.DOWNLOAD_COMPLETE")
-            )
+            registerReceiver(downloadCompleteReceiver, filter1)
+            registerReceiver(progressReceiver, filter2)
         }
     }
 
@@ -93,8 +109,9 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         try {
             unregisterReceiver(downloadCompleteReceiver)
+            unregisterReceiver(progressReceiver)
         } catch (e: Exception) {
-            // Ignorer si déjà unregister
+            // Ignorer
         }
     }
 
@@ -136,6 +153,8 @@ class MainActivity : AppCompatActivity() {
 
         downloadButton.isEnabled = false
         showStatus("Récupération des informations...")
+        showProgress()
+        updateProgress(0)
 
         lifecycleScope.launch {
             try {
@@ -146,14 +165,14 @@ class MainActivity : AppCompatActivity() {
                 if (videoInfo == null) {
                     showStatus("Impossible de récupérer la vidéo", isError = true)
                     showWin95Toast("Vidéo non trouvée", false)
+                    hideProgress()
                     downloadButton.isEnabled = true
                     return@launch
                 }
 
-                showStatus("Téléchargement en cours...")
-                showWin95Toast("Démarrage: ${videoInfo.title}", true)
+                showStatus("Téléchargement: ${videoInfo.title}")
+                showWin95Toast("Démarrage du téléchargement...", true)
 
-                // Lancer le service de téléchargement
                 val serviceIntent = Intent(this@MainActivity, DownloadService::class.java).apply {
                     putExtra("video_id", videoInfo.id)
                     putExtra("title", videoInfo.title)
@@ -167,13 +186,12 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 urlInput.setText("")
-
-                // Ajouter à l'historique
                 addToHistory(videoInfo.title)
 
             } catch (e: Exception) {
                 showStatus("Erreur: ${e.message}", isError = true)
                 showWin95Toast("Erreur!", false)
+                hideProgress()
             } finally {
                 downloadButton.isEnabled = true
             }
@@ -200,11 +218,32 @@ class MainActivity : AppCompatActivity() {
         statusText.visibility = View.VISIBLE
         statusText.text = message
         statusText.setTextColor(
-            ContextCompat.getColor(
-                this,
-                if (isError) android.R.color.holo_red_dark else R.color.win95_black
-            )
+            if (isError) Color.parseColor("#FF0000") else Color.parseColor("#000000")
         )
+    }
+
+    private fun showProgress() {
+        progressLabel.visibility = View.VISIBLE
+        progressContainer.visibility = View.VISIBLE
+    }
+
+    private fun hideProgress() {
+        progressLabel.visibility = View.GONE
+        progressContainer.visibility = View.GONE
+    }
+
+    private fun updateProgress(progress: Int) {
+        progressText.text = "$progress%"
+
+        // Calculer la largeur de la barre
+        progressContainer.post {
+            val totalWidth = progressContainer.width - 4 // -4 pour les marges
+            val fillWidth = (totalWidth * progress) / 100
+
+            val params = progressFill.layoutParams
+            params.width = fillWidth
+            progressFill.layoutParams = params
+        }
     }
 
     private fun showWin95Toast(message: String, isSuccess: Boolean) {
@@ -213,12 +252,17 @@ class MainActivity : AppCompatActivity() {
 
         val textView = layout.findViewById<TextView>(R.id.toastText)
         val iconView = layout.findViewById<ImageView>(R.id.toastIcon)
+        val colorBar = layout.findViewById<View>(R.id.toastColorBar)
 
         textView.text = message
-        iconView.setImageResource(
-            if (isSuccess) android.R.drawable.ic_dialog_info
-            else android.R.drawable.ic_dialog_alert
-        )
+
+        if (isSuccess) {
+            iconView.setImageResource(android.R.drawable.ic_dialog_info)
+            colorBar.setBackgroundColor(Color.parseColor("#008000")) // Vert
+        } else {
+            iconView.setImageResource(android.R.drawable.ic_dialog_alert)
+            colorBar.setBackgroundColor(Color.parseColor("#FF0000")) // Rouge
+        }
 
         val toast = Toast(applicationContext)
         toast.duration = Toast.LENGTH_LONG
@@ -239,7 +283,6 @@ class MainActivity : AppCompatActivity() {
 
         historyContainer.addView(itemView, 0)
 
-        // Sauvegarder dans SharedPreferences
         val prefs = getSharedPreferences("history", MODE_PRIVATE)
         val history = prefs.getStringSet("items", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
         history.add(title)
