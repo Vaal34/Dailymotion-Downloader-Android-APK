@@ -30,25 +30,33 @@ jobs:
       run: ./gradlew assembleDebug
 
     - name: Rename APK
-      run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/dailymotion-downloader.apk
+      run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/video-downloader.apk
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: dailymotion-downloader
-        path: app/build/outputs/apk/debug/dailymotion-downloader.apk
+        name: video-downloader
+        path: app/build/outputs/apk/debug/video-downloader.apk
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
-        files: app/build/outputs/apk/debug/dailymotion-downloader.apk
+        files: app/build/outputs/apk/debug/video-downloader.apk
         name: Release ${{ github.ref_name }}
         body: |
-          ## Dailymotion Downloader ${{ github.ref_name }}
+          ## Video Downloader ${{ github.ref_name }}
+
+          ### Plateformes supportées
+          | Plateforme | Formats d'URL |
+          |------------|---------------|
+          | YouTube | youtube.com/watch?v=xxx, youtu.be/xxx, youtube.com/shorts/xxx |
+          | TikTok | tiktok.com/@user/video/xxx, vm.tiktok.com/xxx |
+          | Twitter/X | twitter.com/user/status/xxx, x.com/user/status/xxx |
+          | Dailymotion | dailymotion.com/video/xxx, dai.ly/xxx |
 
           ### Téléchargement
-          Cliquez sur **dailymotion-downloader.apk** ci-dessous pour télécharger.
+          Cliquez sur **video-downloader.apk** ci-dessous pour télécharger.
 
           ### Installation
           1. Téléchargez le fichier APK
@@ -57,5 +65,6 @@ jobs:
           4. Installez l'application
 
           ### Utilisation
-          - Collez un lien Dailymotion et appuyez sur Télécharger
-          - Ou partagez une vidéo depuis Dailymotion vers cette app
+          - Collez un lien vidéo (YouTube, TikTok, Twitter, Dailymotion)
+          - Appuyez sur Télécharger
+          - Ou partagez une vidéo depuis une app vers Video Downloader
