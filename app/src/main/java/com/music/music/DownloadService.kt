@@ -48,22 +48,23 @@ class DownloadService : Service() {
         val videoId = intent?.getStringExtra("video_id") ?: return START_NOT_STICKY
         val title = intent.getStringExtra("title") ?: "Video"
         val url = intent.getStringExtra("url") ?: return START_NOT_STICKY
+        val platform = intent.getStringExtra("platform") ?: "UNKNOWN"
 
         startForeground(notificationId, createNotification("Téléchargement: $title", 0))
 
         scope.launch {
-            downloadVideo(videoId, title, url)
+            downloadVideo(videoId, title, url, platform)
         }
 
         return START_NOT_STICKY
     }
 
-    private suspend fun downloadVideo(videoId: String, title: String, url: String) {
+    private suspend fun downloadVideo(videoId: String, title: String, url: String, platform: String = "UNKNOWN") {
         try {
             if (url.contains(".m3u8")) {
-                downloadHlsVideo(videoId, title, url)
+                downloadHlsVideo(videoId, title, url, platform)
             } else {
-                downloadDirectVideo(videoId, title, url)
+                downloadDirectVideo(videoId, title, url, platform)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -74,15 +75,26 @@ class DownloadService : Service() {
         }
     }
 
-    private fun getOutputStream(fileName: String, mimeType: String): Pair<OutputStream, Uri?> {
+    private fun getPlatformFolder(platform: String): String {
+        return when (platform) {
+            "DAILYMOTION" -> "Dailymotion"
+            "TIKTOK" -> "TikTok"
+            "TWITTER" -> "Twitter"
+            "YOUTUBE" -> "YouTube"
+            else -> "Videos"
+        }
+    }
+
+    private fun getOutputStream(fileName: String, mimeType: String, platform: String = "Videos"): Pair<OutputStream, Uri?> {
         val safeFileName = fileName.replace(Regex("[^a-zA-Z0-9._\\s-]"), "").take(100)
+        val folder = getPlatformFolder(platform)
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             // Android 10+ : utiliser MediaStore
             val contentValues = ContentValues().apply {
                 put(MediaStore.Video.Media.DISPLAY_NAME, safeFileName)
                 put(MediaStore.Video.Media.MIME_TYPE, mimeType)
-                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Dailymotion")
+                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/$folder")
                 put(MediaStore.Video.Media.IS_PENDING, 1)
             }
 
@@ -96,11 +108,11 @@ class DownloadService : Service() {
         } else {
             // Android 9 et moins : dossier Téléchargements classique
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val dailymotionDir = File(downloadsDir, "Dailymotion")
-            if (!dailymotionDir.exists()) {
-                dailymotionDir.mkdirs()
+            val platformDir = File(downloadsDir, folder)
+            if (!platformDir.exists()) {
+                platformDir.mkdirs()
             }
-            val file = File(dailymotionDir, safeFileName)
+            val file = File(platformDir, safeFileName)
             Pair(FileOutputStream(file), null)
         }
     }
@@ -114,9 +126,10 @@ class DownloadService : Service() {
         }
     }
 
-    private suspend fun downloadHlsVideo(videoId: String, title: String, m3u8Url: String) {
+    private suspend fun downloadHlsVideo(videoId: String, title: String, m3u8Url: String, platform: String = "UNKNOWN") {
         var outputStream: OutputStream? = null
         var uri: Uri? = null
+        val folder = getPlatformFolder(platform)
 
         try {
             withContext(Dispatchers.Main) {
@@ -153,7 +166,7 @@ class DownloadService : Service() {
             val safeTitle = title.replace(Regex("[^a-zA-Z0-9\\s]"), "").take(50).trim()
             val fileName = "${safeTitle}_$videoId.ts"
 
-            val (stream, fileUri) = getOutputStream(fileName, "video/mp2t")
+            val (stream, fileUri) = getOutputStream(fileName, "video/mp2t", platform)
             outputStream = stream
             uri = fileUri
 
@@ -184,24 +197,25 @@ class DownloadService : Service() {
             finalizeDownload(uri)
 
             withContext(Dispatchers.Main) {
-                showNotification("Terminé: $title (dans Téléchargements/Dailymotion)", 100)
-                sendDownloadCompleteBroadcast(title, true, null)
+                showNotification("Terminé: $title (dans Téléchargements/$folder)", 100)
+                sendDownloadCompleteBroadcast(title, true, null, platform)
             }
 
         } catch (e: Exception) {
             outputStream?.close()
-            sendDownloadCompleteBroadcast(title, false, e.message)
+            sendDownloadCompleteBroadcast(title, false, e.message, platform)
             throw e
         } finally {
             stopSelf()
         }
     }
 
-    private fun sendDownloadCompleteBroadcast(title: String, success: Boolean, error: String?) {
+    private fun sendDownloadCompleteBroadcast(title: String, success: Boolean, error: String?, platform: String = "UNKNOWN") {
         val intent = Intent("com.music.music.DOWNLOAD_COMPLETE").apply {
             putExtra("title", title)
             putExtra("success", success)
             putExtra("error", error ?: "")
+            putExtra("platform", getPlatformFolder(platform))
             setPackage(packageName)
         }
         sendBroadcast(intent)
@@ -215,9 +229,10 @@ class DownloadService : Service() {
         sendBroadcast(intent)
     }
 
-    private suspend fun downloadDirectVideo(videoId: String, title: String, url: String) {
+    private suspend fun downloadDirectVideo(videoId: String, title: String, url: String, platform: String = "UNKNOWN") {
         var outputStream: OutputStream? = null
         var uri: Uri? = null
+        val folder = getPlatformFolder(platform)
 
         try {
             val request = Request.Builder()
@@ -236,7 +251,7 @@ class DownloadService : Service() {
             val safeTitle = title.replace(Regex("[^a-zA-Z0-9\\s]"), "").take(50).trim()
             val fileName = "${safeTitle}_$videoId.mp4"
 
-            val (stream, fileUri) = getOutputStream(fileName, "video/mp4")
+            val (stream, fileUri) = getOutputStream(fileName, "video/mp4", platform)
             outputStream = stream
             uri = fileUri
 
@@ -269,13 +284,13 @@ class DownloadService : Service() {
             finalizeDownload(uri)
 
             withContext(Dispatchers.Main) {
-                showNotification("Terminé: $title (dans Téléchargements/Dailymotion)", 100)
-                sendDownloadCompleteBroadcast(title, true, null)
+                showNotification("Terminé: $title (dans Téléchargements/$folder)", 100)
+                sendDownloadCompleteBroadcast(title, true, null, platform)
             }
 
         } catch (e: Exception) {
             outputStream?.close()
-            sendDownloadCompleteBroadcast(title, false, e.message)
+            sendDownloadCompleteBroadcast(title, false, e.message, platform)
             throw e
         } finally {
             stopSelf()
@@ -296,7 +311,7 @@ class DownloadService : Service() {
 
     private fun createNotification(text: String, progress: Int): android.app.Notification {
         val builder = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Dailymotion Downloader")
+            .setContentTitle("Video Downloader")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setPriority(NotificationCompat.PRIORITY_LOW)

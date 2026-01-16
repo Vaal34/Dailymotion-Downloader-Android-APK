@@ -44,12 +44,13 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val title = intent?.getStringExtra("title") ?: "Vidéo"
             val success = intent?.getBooleanExtra("success", false) ?: false
+            val platform = intent?.getStringExtra("platform") ?: "Videos"
 
             hideProgress()
 
             if (success) {
                 showWin95Toast("Téléchargement terminé!\n$title", true)
-                showStatus("Sauvegardé dans Téléchargements/Dailymotion", isError = false)
+                showStatus("Sauvegardé dans Téléchargements/$platform", isError = false)
             } else {
                 val error = intent?.getStringExtra("error") ?: "Erreur inconnue"
                 showWin95Toast("Échec: $error", false)
@@ -91,7 +92,7 @@ class MainActivity : AppCompatActivity() {
             if (url.isNotEmpty()) {
                 startDownload(url)
             } else {
-                showWin95Toast("Veuillez entrer un lien Dailymotion", false)
+                showWin95Toast("Veuillez entrer un lien vidéo", false)
             }
         }
 
@@ -149,27 +150,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startDownload(url: String) {
-        val videoId = extractVideoId(url)
-        if (videoId == null) {
+        val platform = VideoHelper.detectPlatform(url)
+        if (platform == Platform.UNKNOWN) {
             showWin95Toast("URL invalide!", false)
-            showStatus("Utilisez un lien dailymotion.com/video/xxx", isError = true)
+            showStatus("Plateformes supportées: Dailymotion, TikTok, Twitter/X, YouTube", isError = true)
             return
         }
 
         downloadButton.isEnabled = false
-        showStatus("Récupération des informations...")
+        showStatus("Récupération des informations (${getPlatformName(platform)})...")
         showProgress()
         updateProgress(0)
 
         lifecycleScope.launch {
             try {
                 val videoInfo = withContext(Dispatchers.IO) {
-                    DailymotionHelper.getVideoInfo(videoId)
+                    VideoHelper.getVideoInfo(url)
                 }
 
                 if (videoInfo == null) {
                     showStatus("Impossible de récupérer la vidéo", isError = true)
-                    showWin95Toast("Vidéo non trouvée", false)
+                    showWin95Toast("Vidéo non trouvée ou inaccessible", false)
                     hideProgress()
                     downloadButton.isEnabled = true
                     return@launch
@@ -182,6 +183,7 @@ class MainActivity : AppCompatActivity() {
                     putExtra("video_id", videoInfo.id)
                     putExtra("title", videoInfo.title)
                     putExtra("url", videoInfo.downloadUrl)
+                    putExtra("platform", videoInfo.platform.name)
                 }
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -191,7 +193,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 urlInput.setText("")
-                addToHistory(videoInfo.title)
+                addToHistory("${getPlatformEmoji(videoInfo.platform)} ${videoInfo.title}")
 
             } catch (e: Exception) {
                 showStatus("Erreur: ${e.message}", isError = true)
@@ -203,20 +205,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun extractVideoId(url: String): String? {
-        val patterns = listOf(
-            Regex("""dailymotion\.com/video/([a-zA-Z0-9]+)"""),
-            Regex("""dai\.ly/([a-zA-Z0-9]+)"""),
-            Regex("""dailymotion\.com/embed/video/([a-zA-Z0-9]+)""")
-        )
-
-        for (pattern in patterns) {
-            val match = pattern.find(url)
-            if (match != null) {
-                return match.groupValues[1]
-            }
+    private fun getPlatformName(platform: Platform): String {
+        return when (platform) {
+            Platform.DAILYMOTION -> "Dailymotion"
+            Platform.TIKTOK -> "TikTok"
+            Platform.TWITTER -> "Twitter/X"
+            Platform.YOUTUBE -> "YouTube"
+            Platform.UNKNOWN -> "Inconnu"
         }
-        return null
+    }
+
+    private fun getPlatformEmoji(platform: Platform): String {
+        return when (platform) {
+            Platform.DAILYMOTION -> "[DM]"
+            Platform.TIKTOK -> "[TT]"
+            Platform.TWITTER -> "[X]"
+            Platform.YOUTUBE -> "[YT]"
+            Platform.UNKNOWN -> "[?]"
+        }
     }
 
     private fun showStatus(message: String, isError: Boolean = false) {

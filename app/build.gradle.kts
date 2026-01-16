@@ -11,8 +11,8 @@ android {
         applicationId = "com.music.music"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 7
+        versionName = "3.0.0"
     }
 
     buildTypes {
