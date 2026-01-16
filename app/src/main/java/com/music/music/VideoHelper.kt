@@ -1,7 +1,9 @@
 package com.music.music
 
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.FormBody
 import org.json.JSONObject
 import org.json.JSONArray
@@ -439,10 +441,8 @@ object VideoHelper {
         // Méthode 1: cobalt.tools API (open source, fiable)
         try {
             val jsonBody = """{"url":"https://www.youtube.com/watch?v=$videoId","vCodec":"h264","vQuality":"720","aFormat":"mp3","isAudioOnly":false}"""
-            val requestBody = okhttp3.RequestBody.create(
-                okhttp3.MediaType.parse("application/json"),
-                jsonBody
-            )
+            val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+            val requestBody = jsonBody.toRequestBody(mediaType)
 
             val request = Request.Builder()
                 .url("https://api.cobalt.tools/api/json")
