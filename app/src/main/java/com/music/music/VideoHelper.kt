@@ -307,8 +307,44 @@ object VideoHelper {
     }
 
     private fun getTwitterDownloadUrl(url: String, tweetId: String): String? {
-        return try {
-            // Utiliser twitsave.com API
+        // Méthode 1: ssstwitter.com
+        try {
+            val formBody = FormBody.Builder()
+                .add("id", url)
+                .add("locale", "en")
+                .build()
+
+            val request = Request.Builder()
+                .url("https://ssstwitter.com/")
+                .post(formBody)
+                .header("User-Agent", USER_AGENT)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("Origin", "https://ssstwitter.com")
+                .header("Referer", "https://ssstwitter.com/")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val html = response.body?.string() ?: ""
+
+            // Chercher les liens MP4
+            val patterns = listOf(
+                Regex("""href="(https://[^"]+\.mp4[^"]*)"[^>]*>.*?HD""", RegexOption.DOT_MATCHES_ALL),
+                Regex("""href="(https://[^"]+\.mp4[^"]*)"""),
+                Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
+            )
+
+            for (pattern in patterns) {
+                val match = pattern.find(html)
+                if (match != null) {
+                    return match.groupValues[1]
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Méthode 2: twitsave.com
+        try {
             val apiUrl = "https://twitsave.com/info?url=$url"
             val request = Request.Builder()
                 .url(apiUrl)
@@ -316,23 +352,48 @@ object VideoHelper {
                 .build()
 
             val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: return null
+            val html = response.body?.string() ?: ""
 
-            // Parser le HTML pour trouver l'URL de la vidéo
-            val videoUrlPattern = Regex("""<a[^>]*href="(https://[^"]*twimg\.com/[^"]*\.mp4[^"]*)"[^>]*>""")
-            val match = videoUrlPattern.find(html)
+            val patterns = listOf(
+                Regex("""<a[^>]*href="(https://[^"]*twimg\.com/[^"]*\.mp4[^"]*)"[^>]*>"""),
+                Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
+            )
 
-            if (match != null) {
-                match.groupValues[1]
-            } else {
-                // Essayer avec une autre méthode
-                val altPattern = Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
-                altPattern.find(html)?.groupValues?.get(1)
+            for (pattern in patterns) {
+                val match = pattern.find(html)
+                if (match != null) {
+                    return match.groupValues[1]
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            null
         }
+
+        // Méthode 3: twittervideodownloader.com
+        try {
+            val formBody = FormBody.Builder()
+                .add("tweet", url)
+                .build()
+
+            val request = Request.Builder()
+                .url("https://twittervideodownloader.com/download")
+                .post(formBody)
+                .header("User-Agent", USER_AGENT)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val html = response.body?.string() ?: ""
+
+            val pattern = Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
+            val match = pattern.find(html)
+            if (match != null) {
+                return match.groupValues[1]
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return null
     }
 
     // ==================== YOUTUBE ====================
@@ -375,25 +436,74 @@ object VideoHelper {
     }
 
     private fun getYouTubeDownloadUrl(videoId: String): String? {
-        return try {
-            // Méthode: Utiliser l'API de y2mate ou similaire
-            // Note: Ces APIs peuvent changer, il faudra les mettre à jour régulièrement
+        // Méthode 1: cobalt.tools API (open source, fiable)
+        try {
+            val jsonBody = """{"url":"https://www.youtube.com/watch?v=$videoId","vCodec":"h264","vQuality":"720","aFormat":"mp3","isAudioOnly":false}"""
+            val requestBody = okhttp3.RequestBody.create(
+                okhttp3.MediaType.parse("application/json"),
+                jsonBody
+            )
 
-            val apiUrl = "https://api.vevioz.com/api/button/videos/$videoId"
             val request = Request.Builder()
-                .url(apiUrl)
+                .url("https://api.cobalt.tools/api/json")
+                .post(requestBody)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+
+            val json = JSONObject(body)
+            val downloadUrl = json.optString("url", null)
+            if (!downloadUrl.isNullOrEmpty()) {
+                return downloadUrl
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Méthode 2: y2mate.nu
+        try {
+            val formBody = FormBody.Builder()
+                .add("url", "https://www.youtube.com/watch?v=$videoId")
+                .add("q_auto", "1")
+                .build()
+
+            val request = Request.Builder()
+                .url("https://www.y2mate.nu/api/convert")
+                .post(formBody)
                 .header("User-Agent", USER_AGENT)
                 .build()
 
             val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: return null
+            val body = response.body?.string() ?: ""
 
-            // Parser pour trouver le lien de téléchargement MP4
+            val json = JSONObject(body)
+            val downloadUrl = json.optString("url", null)
+            if (!downloadUrl.isNullOrEmpty()) {
+                return downloadUrl
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Méthode 3: ssyoutube.com
+        try {
+            val request = Request.Builder()
+                .url("https://ssyoutube.com/watch?v=$videoId")
+                .header("User-Agent", USER_AGENT)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val html = response.body?.string() ?: ""
+
             val patterns = listOf(
-                Regex("""href="(https://[^"]+)"[^>]*>720p"""),
-                Regex("""href="(https://[^"]+)"[^>]*>480p"""),
-                Regex("""href="(https://[^"]+)"[^>]*>360p"""),
-                Regex("""(https://[^"'\s]+\.googlevideo\.com/[^"'\s]+)""")
+                Regex("""href="(https://[^"]+)"[^>]*download[^>]*>.*?720""", RegexOption.IGNORE_CASE),
+                Regex("""href="(https://[^"]+)"[^>]*download[^>]*>.*?480""", RegexOption.IGNORE_CASE),
+                Regex("""href="(https://[^"]+)"[^>]*download[^>]*>.*?360""", RegexOption.IGNORE_CASE),
+                Regex("""(https://[^"'\s]+rr[0-9]+[^"'\s]+\.googlevideo\.com/[^"'\s]+)""")
             )
 
             for (pattern in patterns) {
@@ -402,8 +512,77 @@ object VideoHelper {
                     return match.groupValues[1]
                 }
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
-            null
+        // Méthode 4: yt1s.com
+        try {
+            val formBody = FormBody.Builder()
+                .add("url", "https://www.youtube.com/watch?v=$videoId")
+                .build()
+
+            val request = Request.Builder()
+                .url("https://www.yt1s.com/api/ajaxSearch/index")
+                .post(formBody)
+                .header("User-Agent", USER_AGENT)
+                .header("X-Requested-With", "XMLHttpRequest")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+
+            val json = JSONObject(body)
+            if (json.optString("status") == "ok") {
+                val links = json.optJSONObject("links")
+                val mp4 = links?.optJSONObject("mp4")
+                if (mp4 != null) {
+                    val keys = mp4.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val item = mp4.optJSONObject(key)
+                        val quality = item?.optString("q", "")
+                        if (quality == "720p" || quality == "480p" || quality == "360p") {
+                            val k = item?.optString("k", null)
+                            if (k != null) {
+                                // Convertir le lien
+                                val convertUrl = getYt1sConvertUrl(videoId, k)
+                                if (convertUrl != null) return convertUrl
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return null
+    }
+
+    private fun getYt1sConvertUrl(videoId: String, k: String): String? {
+        return try {
+            val formBody = FormBody.Builder()
+                .add("vid", videoId)
+                .add("k", k)
+                .build()
+
+            val request = Request.Builder()
+                .url("https://www.yt1s.com/api/ajaxConvert/convert")
+                .post(formBody)
+                .header("User-Agent", USER_AGENT)
+                .header("X-Requested-With", "XMLHttpRequest")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            val json = JSONObject(body)
+
+            if (json.optString("status") == "ok") {
+                json.optString("dlink", null)
+            } else {
+                null
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null
