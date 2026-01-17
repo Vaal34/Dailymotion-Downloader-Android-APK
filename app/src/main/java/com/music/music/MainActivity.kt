@@ -82,6 +82,9 @@ class MainActivity : AppCompatActivity() {
         requestPermissions()
         handleSharedIntent(intent)
 
+        // Initialiser yt-dlp pour YouTube et Twitter
+        VideoHelper.initYtDlp(applicationContext)
+
         downloadButton.setOnClickListener {
             // Cacher le clavier
             val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager

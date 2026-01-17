@@ -9,10 +9,20 @@ android {
 
     defaultConfig {
         applicationId = "com.music.music"
-        minSdk = 21
+        minSdk = 24
         targetSdk = 34
-        versionCode = 7
-        versionName = "3.0.0"
+        versionCode = 8
+        versionName = "3.1.0"
+
+        ndk {
+            abiFilters += listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a")
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     buildTypes {
@@ -51,4 +61,8 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // yt-dlp pour Android (YouTube, Twitter, TikTok, etc.)
+    implementation("io.github.junkfood02.youtubedl-android:library:0.17.2")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.2")
 }

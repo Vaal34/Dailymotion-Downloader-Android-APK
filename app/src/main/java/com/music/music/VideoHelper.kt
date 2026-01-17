@@ -1,12 +1,12 @@
 package com.music.music
 
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import android.content.Context
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.FormBody
 import org.json.JSONObject
-import org.json.JSONArray
 import java.util.concurrent.TimeUnit
 
 enum class Platform {
@@ -33,6 +33,33 @@ object VideoHelper {
         .build()
 
     private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+    private var isYtDlpInitialized = false
+
+    /**
+     * Initialise yt-dlp (doit être appelé une fois au démarrage)
+     */
+    fun initYtDlp(context: Context) {
+        if (!isYtDlpInitialized) {
+            try {
+                YoutubeDL.getInstance().init(context)
+                isYtDlpInitialized = true
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /**
+     * Met à jour yt-dlp vers la dernière version
+     */
+    suspend fun updateYtDlp(context: Context) {
+        try {
+            YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel.STABLE)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     /**
      * Détecte la plateforme à partir de l'URL
@@ -82,11 +109,7 @@ object VideoHelper {
         for (pattern in patterns) {
             pattern.find(url)?.let { return it.groupValues[1] }
         }
-        // Si c'est un lien court, retourner l'URL complète pour résolution
-        if (url.contains("vm.tiktok.com") || url.contains("tiktok.com/t/")) {
-            return url
-        }
-        return null
+        return url.hashCode().toString()
     }
 
     private fun extractTwitterId(url: String): String? {
@@ -119,12 +142,49 @@ object VideoHelper {
      */
     fun getVideoInfo(url: String): VideoInfo? {
         val platform = detectPlatform(url)
+
+        // Pour YouTube et Twitter, utiliser yt-dlp
+        if (platform == Platform.YOUTUBE || platform == Platform.TWITTER) {
+            return getVideoInfoWithYtDlp(url, platform)
+        }
+
+        // Pour les autres plateformes, utiliser les méthodes existantes
         return when (platform) {
             Platform.DAILYMOTION -> getDailymotionInfo(url)
             Platform.TIKTOK -> getTikTokInfo(url)
-            Platform.TWITTER -> getTwitterInfo(url)
-            Platform.YOUTUBE -> getYouTubeInfo(url)
-            Platform.UNKNOWN -> null
+            else -> null
+        }
+    }
+
+    /**
+     * Utilise yt-dlp pour récupérer les infos de la vidéo
+     */
+    private fun getVideoInfoWithYtDlp(url: String, platform: Platform): VideoInfo? {
+        return try {
+            val request = YoutubeDLRequest(url)
+            request.addOption("--dump-json")
+            request.addOption("--no-playlist")
+            request.addOption("-f", "best[ext=mp4]/best")
+
+            val response = YoutubeDL.getInstance().execute(request)
+            val jsonOutput = response.out
+
+            if (jsonOutput.isNullOrEmpty()) return null
+
+            val json = JSONObject(jsonOutput)
+            val videoId = json.optString("id", url.hashCode().toString())
+            val title = json.optString("title", "${platform.name}_$videoId")
+            val downloadUrl = json.optString("url", null) ?: return null
+
+            VideoInfo(videoId, title, downloadUrl, platform)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Fallback aux méthodes alternatives
+            when (platform) {
+                Platform.YOUTUBE -> getYouTubeInfoFallback(url)
+                Platform.TWITTER -> getTwitterInfoFallback(url)
+                else -> null
+            }
         }
     }
 
@@ -222,7 +282,7 @@ object VideoHelper {
 
             // Extraire l'ID de la vidéo
             val videoId = Regex("""video/(\d+)""").find(resolvedUrl)?.groupValues?.get(1)
-                ?: return null
+                ?: resolvedUrl.hashCode().toString()
 
             // Utiliser l'API oEmbed de TikTok pour le titre
             val oembedUrl = "https://www.tiktok.com/oembed?url=$resolvedUrl"
@@ -244,7 +304,7 @@ object VideoHelper {
                 "TikTok_$videoId"
             }
 
-            // Utiliser un service tiers pour obtenir l'URL de téléchargement
+            // Utiliser tikwm.com API
             val downloadUrl = getTikTokDownloadUrl(resolvedUrl, videoId)
                 ?: return null
 
@@ -258,7 +318,6 @@ object VideoHelper {
 
     private fun getTikTokDownloadUrl(url: String, videoId: String): String? {
         return try {
-            // Méthode 1: Utiliser tikwm.com API
             val apiUrl = "https://www.tikwm.com/api/"
             val formBody = FormBody.Builder()
                 .add("url", url)
@@ -277,7 +336,6 @@ object VideoHelper {
 
             if (json.optInt("code") == 0) {
                 val data = json.optJSONObject("data")
-                // Préférer HD, sinon version normale
                 data?.optString("hdplay")?.takeIf { it.isNotEmpty() }
                     ?: data?.optString("play")?.takeIf { it.isNotEmpty() }
             } else {
@@ -289,122 +347,13 @@ object VideoHelper {
         }
     }
 
-    // ==================== TWITTER / X ====================
+    // ==================== YOUTUBE FALLBACK ====================
 
-    private fun getTwitterInfo(url: String): VideoInfo? {
-        return try {
-            val tweetId = extractTwitterId(url) ?: return null
-
-            // Utiliser un service tiers pour Twitter
-            val downloadUrl = getTwitterDownloadUrl(url, tweetId)
-                ?: return null
-
-            val title = "Twitter_$tweetId"
-            VideoInfo(tweetId, title, downloadUrl, Platform.TWITTER)
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    private fun getTwitterDownloadUrl(url: String, tweetId: String): String? {
-        // Méthode 1: ssstwitter.com
-        try {
-            val formBody = FormBody.Builder()
-                .add("id", url)
-                .add("locale", "en")
-                .build()
-
-            val request = Request.Builder()
-                .url("https://ssstwitter.com/")
-                .post(formBody)
-                .header("User-Agent", USER_AGENT)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .header("Origin", "https://ssstwitter.com")
-                .header("Referer", "https://ssstwitter.com/")
-                .build()
-
-            val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: ""
-
-            // Chercher les liens MP4
-            val patterns = listOf(
-                Regex("""href="(https://[^"]+\.mp4[^"]*)"[^>]*>.*?HD""", RegexOption.DOT_MATCHES_ALL),
-                Regex("""href="(https://[^"]+\.mp4[^"]*)"""),
-                Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
-            )
-
-            for (pattern in patterns) {
-                val match = pattern.find(html)
-                if (match != null) {
-                    return match.groupValues[1]
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // Méthode 2: twitsave.com
-        try {
-            val apiUrl = "https://twitsave.com/info?url=$url"
-            val request = Request.Builder()
-                .url(apiUrl)
-                .header("User-Agent", USER_AGENT)
-                .build()
-
-            val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: ""
-
-            val patterns = listOf(
-                Regex("""<a[^>]*href="(https://[^"]*twimg\.com/[^"]*\.mp4[^"]*)"[^>]*>"""),
-                Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
-            )
-
-            for (pattern in patterns) {
-                val match = pattern.find(html)
-                if (match != null) {
-                    return match.groupValues[1]
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // Méthode 3: twittervideodownloader.com
-        try {
-            val formBody = FormBody.Builder()
-                .add("tweet", url)
-                .build()
-
-            val request = Request.Builder()
-                .url("https://twittervideodownloader.com/download")
-                .post(formBody)
-                .header("User-Agent", USER_AGENT)
-                .build()
-
-            val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: ""
-
-            val pattern = Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
-            val match = pattern.find(html)
-            if (match != null) {
-                return match.groupValues[1]
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        return null
-    }
-
-    // ==================== YOUTUBE ====================
-
-    private fun getYouTubeInfo(url: String): VideoInfo? {
+    private fun getYouTubeInfoFallback(url: String): VideoInfo? {
         return try {
             val videoId = extractYouTubeId(url) ?: return null
 
-            // Récupérer les informations via la page embed
+            // Récupérer le titre via oEmbed
             val infoUrl = "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$videoId&format=json"
             val infoRequest = Request.Builder()
                 .url(infoUrl)
@@ -425,98 +374,18 @@ object VideoHelper {
                 "YouTube_$videoId"
             }
 
-            // Utiliser un service tiers pour obtenir l'URL de téléchargement
-            val downloadUrl = getYouTubeDownloadUrl(videoId)
-                ?: return null
+            // Essayer avec des services tiers
+            val downloadUrl = getYouTubeDownloadUrlFallback(videoId) ?: return null
 
             VideoInfo(videoId, title, downloadUrl, Platform.YOUTUBE)
-
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
     }
 
-    private fun getYouTubeDownloadUrl(videoId: String): String? {
-        // Méthode 1: cobalt.tools API (open source, fiable)
-        try {
-            val jsonBody = """{"url":"https://www.youtube.com/watch?v=$videoId","vCodec":"h264","vQuality":"720","aFormat":"mp3","isAudioOnly":false}"""
-            val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
-            val requestBody = jsonBody.toRequestBody(mediaType)
-
-            val request = Request.Builder()
-                .url("https://api.cobalt.tools/api/json")
-                .post(requestBody)
-                .header("User-Agent", USER_AGENT)
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .build()
-
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: ""
-
-            val json = JSONObject(body)
-            val downloadUrl = json.optString("url", null)
-            if (!downloadUrl.isNullOrEmpty()) {
-                return downloadUrl
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // Méthode 2: y2mate.nu
-        try {
-            val formBody = FormBody.Builder()
-                .add("url", "https://www.youtube.com/watch?v=$videoId")
-                .add("q_auto", "1")
-                .build()
-
-            val request = Request.Builder()
-                .url("https://www.y2mate.nu/api/convert")
-                .post(formBody)
-                .header("User-Agent", USER_AGENT)
-                .build()
-
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: ""
-
-            val json = JSONObject(body)
-            val downloadUrl = json.optString("url", null)
-            if (!downloadUrl.isNullOrEmpty()) {
-                return downloadUrl
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // Méthode 3: ssyoutube.com
-        try {
-            val request = Request.Builder()
-                .url("https://ssyoutube.com/watch?v=$videoId")
-                .header("User-Agent", USER_AGENT)
-                .build()
-
-            val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: ""
-
-            val patterns = listOf(
-                Regex("""href="(https://[^"]+)"[^>]*download[^>]*>.*?720""", RegexOption.IGNORE_CASE),
-                Regex("""href="(https://[^"]+)"[^>]*download[^>]*>.*?480""", RegexOption.IGNORE_CASE),
-                Regex("""href="(https://[^"]+)"[^>]*download[^>]*>.*?360""", RegexOption.IGNORE_CASE),
-                Regex("""(https://[^"'\s]+rr[0-9]+[^"'\s]+\.googlevideo\.com/[^"'\s]+)""")
-            )
-
-            for (pattern in patterns) {
-                val match = pattern.find(html)
-                if (match != null) {
-                    return match.groupValues[1]
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // Méthode 4: yt1s.com
+    private fun getYouTubeDownloadUrlFallback(videoId: String): String? {
+        // Essayer yt1s.com
         try {
             val formBody = FormBody.Builder()
                 .add("url", "https://www.youtube.com/watch?v=$videoId")
@@ -530,7 +399,7 @@ object VideoHelper {
                 .build()
 
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: ""
+            val body = response.body?.string() ?: return null
 
             val json = JSONObject(body)
             if (json.optString("status") == "ok") {
@@ -545,7 +414,6 @@ object VideoHelper {
                         if (quality == "720p" || quality == "480p" || quality == "360p") {
                             val k = item?.optString("k", null)
                             if (k != null) {
-                                // Convertir le lien
                                 val convertUrl = getYt1sConvertUrl(videoId, k)
                                 if (convertUrl != null) return convertUrl
                             }
@@ -575,7 +443,7 @@ object VideoHelper {
                 .build()
 
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: ""
+            val body = response.body?.string() ?: return null
             val json = JSONObject(body)
 
             if (json.optString("status") == "ok") {
@@ -587,6 +455,82 @@ object VideoHelper {
             e.printStackTrace()
             null
         }
+    }
+
+    // ==================== TWITTER FALLBACK ====================
+
+    private fun getTwitterInfoFallback(url: String): VideoInfo? {
+        return try {
+            val tweetId = extractTwitterId(url) ?: return null
+
+            val downloadUrl = getTwitterDownloadUrlFallback(url) ?: return null
+
+            val title = "Twitter_$tweetId"
+            VideoInfo(tweetId, title, downloadUrl, Platform.TWITTER)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    private fun getTwitterDownloadUrlFallback(url: String): String? {
+        // Méthode 1: twdown.net
+        try {
+            val formBody = FormBody.Builder()
+                .add("URL", url)
+                .build()
+
+            val request = Request.Builder()
+                .url("https://twdown.net/download.php")
+                .post(formBody)
+                .header("User-Agent", USER_AGENT)
+                .header("Origin", "https://twdown.net")
+                .header("Referer", "https://twdown.net/")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val html = response.body?.string() ?: ""
+
+            val patterns = listOf(
+                Regex("""href="(https://[^"]+\.mp4[^"]*)"[^>]*>.*?Download""", RegexOption.IGNORE_CASE),
+                Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
+            )
+
+            for (pattern in patterns) {
+                val match = pattern.find(html)
+                if (match != null) {
+                    return match.groupValues[1]
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Méthode 2: savetweetvid.com
+        try {
+            val formBody = FormBody.Builder()
+                .add("url", url)
+                .build()
+
+            val request = Request.Builder()
+                .url("https://www.savetweetvid.com/downloader")
+                .post(formBody)
+                .header("User-Agent", USER_AGENT)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val html = response.body?.string() ?: ""
+
+            val pattern = Regex("""(https://video\.twimg\.com/[^"'\s]+\.mp4[^"'\s]*)""")
+            val match = pattern.find(html)
+            if (match != null) {
+                return match.groupValues[1]
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return null
     }
 
     // ==================== UTILITAIRES ====================
