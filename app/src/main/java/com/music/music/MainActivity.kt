@@ -85,6 +85,13 @@ class MainActivity : AppCompatActivity() {
         // Initialiser yt-dlp pour YouTube et Twitter
         VideoHelper.initYtDlp(applicationContext)
 
+        // Mettre à jour yt-dlp en arrière-plan pour avoir la dernière version
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                VideoHelper.updateYtDlp(applicationContext)
+            }
+        }
+
         downloadButton.setOnClickListener {
             // Cacher le clavier
             val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager

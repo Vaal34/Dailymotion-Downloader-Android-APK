@@ -35,6 +35,8 @@ object VideoHelper {
     private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
     private var isYtDlpInitialized = false
+    private var ytDlpInitError: String? = null
+    private var isYtDlpUpdated = false
 
     /**
      * Initialise yt-dlp (doit être appelé une fois au démarrage)
@@ -44,8 +46,11 @@ object VideoHelper {
             try {
                 YoutubeDL.getInstance().init(context)
                 isYtDlpInitialized = true
+                ytDlpInitError = null
+                android.util.Log.d("VideoHelper", "yt-dlp initialisé avec succès")
             } catch (e: Exception) {
-                e.printStackTrace()
+                ytDlpInitError = e.message ?: "Erreur d'initialisation inconnue"
+                android.util.Log.e("VideoHelper", "Erreur init yt-dlp: ${e.message}", e)
             }
         }
     }
@@ -53,11 +58,18 @@ object VideoHelper {
     /**
      * Met à jour yt-dlp vers la dernière version
      */
-    suspend fun updateYtDlp(context: Context) {
-        try {
+    suspend fun updateYtDlp(context: Context): Boolean {
+        if (isYtDlpUpdated) return true
+        return try {
+            android.util.Log.d("VideoHelper", "Mise à jour de yt-dlp...")
             YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel.STABLE)
+            isYtDlpUpdated = true
+            android.util.Log.d("VideoHelper", "yt-dlp mis à jour avec succès")
+            true
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("VideoHelper", "Erreur mise à jour yt-dlp: ${e.message}", e)
+            // Même si la mise à jour échoue, on peut continuer avec la version existante
+            true
         }
     }
 
@@ -158,9 +170,47 @@ object VideoHelper {
 
     /**
      * Utilise yt-dlp pour récupérer les infos de la vidéo
+     * PRIORITÉ: yt-dlp d'abord (plus fiable), puis fallback sur APIs tierces
      */
     private fun getVideoInfoWithYtDlp(url: String, platform: Platform): VideoInfo? {
-        // D'abord essayer les méthodes de fallback qui sont plus rapides
+        android.util.Log.d("VideoHelper", "Récupération info pour $platform: $url")
+
+        // PRIORITÉ 1: Essayer yt-dlp d'abord (plus fiable pour YouTube)
+        if (isYtDlpInitialized) {
+            try {
+                android.util.Log.d("VideoHelper", "Tentative avec yt-dlp...")
+                val request = YoutubeDLRequest(url)
+
+                // Options optimisées pour YouTube
+                request.addOption("-f", "best[ext=mp4][height<=1080]/best[ext=mp4]/best")
+                request.addOption("--no-playlist")
+                request.addOption("--socket-timeout", "30")
+                request.addOption("--retries", "3")
+                request.addOption("--no-check-certificates")
+                // Forcer IPv4 pour éviter les problèmes de connexion
+                request.addOption("--force-ipv4")
+
+                val streamInfo = YoutubeDL.getInstance().getInfo(request)
+
+                val videoId = streamInfo.id ?: extractVideoId(url, platform) ?: url.hashCode().toString()
+                val title = streamInfo.title ?: "${platform.name}_$videoId"
+                val downloadUrl = streamInfo.url
+
+                if (downloadUrl != null && downloadUrl.isNotEmpty()) {
+                    android.util.Log.d("VideoHelper", "yt-dlp succès: $title")
+                    return VideoInfo(videoId, title, downloadUrl, platform)
+                } else {
+                    android.util.Log.w("VideoHelper", "yt-dlp: URL de téléchargement vide")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("VideoHelper", "yt-dlp échoué: ${e.message}", e)
+            }
+        } else {
+            android.util.Log.w("VideoHelper", "yt-dlp non initialisé: $ytDlpInitError")
+        }
+
+        // PRIORITÉ 2: Fallback sur APIs tierces
+        android.util.Log.d("VideoHelper", "Tentative avec APIs de fallback...")
         val fallbackResult = when (platform) {
             Platform.YOUTUBE -> getYouTubeInfoFallback(url)
             Platform.TWITTER -> getTwitterInfoFallback(url)
@@ -168,27 +218,12 @@ object VideoHelper {
         }
 
         if (fallbackResult != null) {
+            android.util.Log.d("VideoHelper", "Fallback succès: ${fallbackResult.title}")
             return fallbackResult
         }
 
-        // Si les fallbacks échouent, essayer yt-dlp
-        return try {
-            if (!isYtDlpInitialized) return null
-
-            val request = YoutubeDLRequest(url)
-            request.addOption("-f", "best[ext=mp4]/best")
-
-            val streamInfo = YoutubeDL.getInstance().getInfo(request)
-
-            val videoId = streamInfo.id ?: url.hashCode().toString()
-            val title = streamInfo.title ?: "${platform.name}_$videoId"
-            val downloadUrl = streamInfo.url ?: return null
-
-            VideoInfo(videoId, title, downloadUrl, platform)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
+        android.util.Log.e("VideoHelper", "Toutes les méthodes ont échoué pour $url")
+        return null
     }
 
     // ==================== DAILYMOTION ====================

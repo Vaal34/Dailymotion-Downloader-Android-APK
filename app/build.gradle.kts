@@ -11,8 +11,8 @@ android {
         applicationId = "com.music.music"
         minSdk = 24
         targetSdk = 34
-        versionCode = 8
-        versionName = "3.1.0"
+        versionCode = 9
+        versionName = "3.1.1"
 
         ndk {
             abiFilters += listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a")
@@ -63,6 +63,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // yt-dlp pour Android (YouTube, Twitter, TikTok, etc.)
-    implementation("io.github.junkfood02.youtubedl-android:library:0.17.2")
-    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.2")
+    // Version 0.18.1 - dernière version stable (novembre 2025)
+    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
 }
